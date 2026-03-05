@@ -1,10 +1,10 @@
 import flet as ft
 import math
-import requests
+import urllib.request
+import json
 import threading
 
 def main(page: ft.Page):
-    # --- إعدادات الصفحة ---
     page.title = "VoltPlus - Smart Solar Sizing"
     page.theme_mode = "dark"
     page.bgcolor = "#0f172a" 
@@ -13,10 +13,8 @@ def main(page: ft.Page):
     page.scroll = "auto"
     page.padding = 20
 
-    # --- 1. العنوان ---
     title = ft.Text("⚡ التصميم الهندسي الذكي", size=24, weight="bold", color="#38bdf8", text_align="center")
 
-    # --- ستايل موحد للحقول ---
     def CustomInput(label, value, suffix_str=""):
         return ft.TextField(
             label=label, 
@@ -30,14 +28,12 @@ def main(page: ft.Page):
             text_align="center"
         )
 
-    # --- 2. تعريف الحقول (تم نقلها للأعلى لتحديثها من زر الموقع) ---
     day_load_in = CustomInput("حمل النهار الأقصى", 3000, "W")
-    day_hours_in = CustomInput("ساعات عمل النهار", 0, "h") # سيتم التحديث تلقائيا
+    day_hours_in = CustomInput("ساعات عمل النهار", 0, "h")
     night_load_in = CustomInput("حمل الليل الأقصى", 2000, "W")
-    night_hours_in = CustomInput("ساعات عمل الليل", 0, "h") # سيتم التحديث تلقائيا
-    sun_hours_in = CustomInput("ساعات الذروة (PSH)", 0, "h") # سيتم التحديث تلقائيا
+    night_hours_in = CustomInput("ساعات عمل الليل", 0, "h")
+    sun_hours_in = CustomInput("ساعات الذروة (PSH)", 0, "h")
 
-    # --- 3. قسم تحديد الموقع والربط الفلكي (الذكاء هنا) ---
     lbl_angle = ft.Text("اضغط على الزر لجلب البيانات الفلكية لموقعك", size=13, color="#94a3b8", weight="bold", text_align="center")
 
     def get_location_and_astro(e):
@@ -47,26 +43,26 @@ def main(page: ft.Page):
 
         def fetch_data():
             try:
-                # 1. جلب الموقع
-                res = requests.get('https://ipinfo.io/json', timeout=5).json()
+                # 1. جلب الموقع باستخدام المكتبة المدمجة urllib
+                req_loc = urllib.request.Request('https://ipinfo.io/json', headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req_loc, timeout=7) as response:
+                    res = json.loads(response.read().decode('utf-8'))
+                
                 lat, lon = res['loc'].split(',')
                 lat, lon = float(lat), float(lon)
                 optimal_angle = round(abs(lat))
 
-                # 2. جلب البيانات الفلكية من API (Sunrise-Sunset)
+                # 2. جلب البيانات الفلكية من API
                 astro_url = f"https://api.sunrise-sunset.org/json?lat={lat}&lng={lon}&formatted=0"
-                astro_res = requests.get(astro_url, timeout=5).json()
+                req_astro = urllib.request.Request(astro_url, headers={'User-Agent': 'Mozilla/5.0'})
+                with urllib.request.urlopen(req_astro, timeout=7) as response:
+                    astro_res = json.loads(response.read().decode('utf-8'))
                 
-                # طول النهار بالثواني، نحوله لساعات
                 day_length_sec = astro_res['results']['day_length']
                 day_h = round(day_length_sec / 3600, 1)
                 night_h = round(24 - day_h, 1)
-
-                # 3. حساب ساعات الذروة الشمسية (PSH)
-                # هندسياً: PSH يعادل تقريباً 45-50% من إجمالي طول النهار في المناطق المشمسة
                 psh = round(day_h * 0.45, 1)
 
-                # 4. تحديث الواجهة تلقائياً بالبيانات الحقيقية
                 day_hours_in.value = str(day_h)
                 night_hours_in.value = str(night_h)
                 sun_hours_in.value = str(psh)
@@ -99,7 +95,6 @@ def main(page: ft.Page):
         padding=15, bgcolor="#1e293b", border_radius=12, border=ft.border.all(1, "#334155"), width=page.window.width
     )
 
-    # --- 4. ترتيب قسم الأحمال بعد التحديث ---
     load_section = ft.Container(
         content=ft.Column([
             ft.Text("📊 تحليل الأحمال وساعات التشغيل", color="#e2e8f0", weight="bold"),
@@ -127,7 +122,6 @@ def main(page: ft.Page):
         padding=15, bgcolor="#1e293b", border_radius=12, border=ft.border.all(1, "#334155")
     )
 
-    # --- 5. المواصفات الفنية للمكونات ---
     panel_watt_in = CustomInput("قدرة اللوح الواحد", 615, "W")
     inv_safety_in = CustomInput("عامل أمان الإنفرتر", 25, "%")
     
@@ -148,7 +142,6 @@ def main(page: ft.Page):
         padding=15, bgcolor="#1e293b", border_radius=12, border=ft.border.all(1, "#334155")
     )
 
-    # --- 6. شاشة النتائج الدقيقة ---
     res_inverter = ft.Text("الإنفرتر: ---", size=15, weight="bold", color="#fcd34d")
     res_panels = ft.Text("الألواح: ---", size=15, weight="bold", color="#38bdf8")
     res_battery = ft.Text("البطاريات: ---", size=15, weight="bold", color="#34d399")
@@ -164,7 +157,6 @@ def main(page: ft.Page):
         padding=20, border_radius=12, bgcolor="#111827", border=ft.border.all(1, "#38bdf8")
     )
 
-    # --- 7. خوارزمية الحساب ---
     def calculate_accurate(e):
         try:
             day_load, day_hours = float(day_load_in.value), float(day_hours_in.value)
@@ -184,7 +176,6 @@ def main(page: ft.Page):
             total_daily_energy = day_energy + night_energy
 
             required_solar_generation = total_daily_energy / sys_eff
-            # تجنب القسمة على صفر إذا كان الحقل فارغاً
             sun_hours_safe = sun_hours if sun_hours > 0 else 1 
             total_panel_watts = required_solar_generation / sun_hours_safe
             num_panels = math.ceil(total_panel_watts / panel_watt)
